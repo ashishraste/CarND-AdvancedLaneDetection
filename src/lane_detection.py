@@ -67,11 +67,11 @@ if __name__ == '__main__':
 
 
     # Warp pipeline. Returns warped binary image.
-    src_img = vu.load_image('../test_images/test2.jpg')
+    src_img = vu.load_image('../test_images/test3.jpg')
     binary_warped = warp_pipeline(src_img, ptrans_mat)
 
-    lane_lines_img,left_fit,right_fit,left_fit_m,right_fit_m = vu.detect_lane_lines(
-        binary_warped)
-    vu.calculate_curvature(lane_lines_img, left_fit_m)
-    vu.calculate_curvature(lane_lines_img, right_fit_m)
+    lane_lines_img,left_fit,right_fit = vu.detect_lane_lines(binary_warped)
+    vu.calculate_curvature(lane_lines_img, left_fit)
+    vu.calculate_curvature(lane_lines_img, right_fit)
+    vu.calculate_vehicle_offset(lane_lines_img, left_fit, right_fit)
     vu.draw_lane(src_img, left_fit, right_fit, ptrans_mat_inv)

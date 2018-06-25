@@ -223,19 +223,10 @@ def detect_lane_lines(binary_warped, visualize_lane=True):
     rightx = nonzerox[right_lane_inds]
     righty = nonzeroy[right_lane_inds]
 
-    # Fitting a second order polynomial over the left and right lines' pixels.
-    ym_per_pix = 30 / 720  # 30 metres per pixel in y-dimension.
-    xm_per_pix = 3.7 / 700  # 3.7 metres per pixel in x-dimension.
+    # Fitting a second order polynomial over the left and right lane-lines.
     # Polynomials in pixel-space.
     left_fit = np.polyfit(lefty, leftx, 2)
     right_fit = np.polyfit(righty, rightx, 2)
-    # Polynomials in metres-space.
-    left_fit_m = np.array([(xm_per_pix/(ym_per_pix**2)) * left_fit[0],
-                           (xm_per_pix/ym_per_pix) * left_fit[1],
-                           left_fit[2]])
-    right_fit_m = np.array([(xm_per_pix/(ym_per_pix**2)) * right_fit[0],
-                            (xm_per_pix/ym_per_pix) * right_fit[1],
-                            right_fit[2]])
 
     if visualize_lane:
         # Fitting for f(y) rather than f(x) since y varies (variable) and x could remain constant for different y values.
@@ -253,7 +244,7 @@ def detect_lane_lines(binary_warped, visualize_lane=True):
         plt.ylim(720, 0)
         plt.show()
 
-    return out_img, left_fit, right_fit, left_fit_m, right_fit_m
+    return out_img, left_fit, right_fit
 
 
 def draw_lane(src_img, left_fit, right_fit, ptrans_mat_inv):
@@ -266,8 +257,8 @@ def draw_lane(src_img, left_fit, right_fit, ptrans_mat_inv):
     '''
     ploty = np.linspace(0, src_img.shape[0]-1, src_img.shape[0])
     color_warp = np.zeros_like(src_img).astype(np.uint8)
-    left_fitx = left_fit[0] * ploty ** 2 + left_fit[1] * ploty + left_fit[2]
-    right_fitx = right_fit[0] * ploty ** 2 + right_fit[1] * ploty + right_fit[2]
+    left_fitx = left_fit[0] * (ploty ** 2) + left_fit[1] * ploty + left_fit[2]
+    right_fitx = right_fit[0] * (ploty ** 2) + right_fit[1] * ploty + right_fit[2]
     pts_left = np.array([np.transpose(np.vstack([left_fitx, ploty]))])
     pts_right = np.array([np.flipud(np.transpose(np.vstack([right_fitx, ploty])))])
     pts = np.hstack((pts_left, pts_right))
@@ -279,34 +270,35 @@ def draw_lane(src_img, left_fit, right_fit, ptrans_mat_inv):
     plot_transformed_image(src_img, combined, 'Original Image', 'Detected Lane Image', axis_off=True)
 
 
-def calculate_curvature(src_img, poly_fit_m):
+def calculate_curvature(src_img, poly_fit):
     '''
     Calculates curvature of a lane-line with the following equation.
     Curvature = (1 + (2Ay + B)^2)^(1.5) / |2A|, for a polynomial curve f(y) = Ay^2 + By + C.
     '''
+    xm_per_pix = 3.6 / 700 # 3.6 metres per pixel in x-dimension.
     ym_per_pix = 30 / 720  # 30 metres per pixel in y-dimension.
     y_eval = (src_img.shape[0] - 1) * ym_per_pix
+    # Polynomial in world-space.
+    poly_fit_m = np.array([(xm_per_pix / (ym_per_pix ** 2)) * poly_fit[0],
+                           (xm_per_pix / ym_per_pix) * poly_fit[1],
+                           poly_fit[2]])
     # Calculating curvature.
     return ((1 + (2*poly_fit_m[0]*y_eval + poly_fit_m[1])**2)**1.5) / np.absolute(2*poly_fit_m[0])
 
 
-def calculate_vehicle_center(src_img, left_fit_m, right_fit_m):
-    pass
-    # ym_per_pix = 30 / 720  # 30 metres per pixel in y-dimension.
-    # xm_per_pix = 3.7 / 700  # 3.7 metres per pixel in x-dimension.
-    # xMax = src_img.shape[1] * xm_per_pix
-    # yMax = src_img.shape[0] * ym_per_pix
-    # vehicleCenter = xMax / 2
-    # lineLeft = left_fit_m[0]*yMax**2 + left_fit_m[1]*yMax + left_fit_m[2]
-    # lineRight = right_fit_m[0]*yMax**2 + right_fit_m[1]*yMax + right_fit_m[2]
-    # lineMiddle = lineLeft + (lineRight - lineLeft)/2
-    # diffFromVehicle = lineMiddle - vehicleCenter
-    # message=""
-    # if diffFromVehicle > 0:
-    #     message = '{:.2f} m right'.format(diffFromVehicle)
-    # else:
-    #     message = '{:.2f} m left'.format(-diffFromVehicle)
-    # print(message)
+def calculate_vehicle_offset(src_img, left_fit_m, right_fit_m):
+    xm_per_pix = 3.7 / 700  # 3.7 metres per pixel in x-dimension.
+    bottom_y = src_img.shape[0]
+    bottom_x_left = left_fit_m[0]*(bottom_y**2) + left_fit_m[1]*bottom_y + left_fit_m[2]
+    bottom_x_right = right_fit_m[0]*(bottom_y**2) + right_fit_m[1]*bottom_y + right_fit_m[2]
+
+    vehicle_offset = (src_img.shape[1]/2) - (bottom_x_left + bottom_x_right)/2
+    vehicle_offset *= xm_per_pix
+    if vehicle_offset > 0:
+        message = 'Vehicle is {0:.3f}m right of lane-center'.format(vehicle_offset)
+    else:
+        message = 'Vehicle is {0:.3f}m left of lane-center'.format(np.abs(vehicle_offset))
+    return vehicle_offset, message
 
 
 def load_image(img_path):
