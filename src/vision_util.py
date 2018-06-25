@@ -43,44 +43,44 @@ def load_calibration_matrix(calib_path = './calibration.p'):
 
 
 def abs_sobel_thresh(img, orient='x', sobel_kernel=3, thresh=(0,255)):
-  gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-  if orient == 'x':
-    sobel = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=sobel_kernel)
-  if orient == 'y':
-    sobel = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=sobel_kernel)
-  abs_sobel = np.absolute(sobel)
-  scaled_sobel = np.uint8(255 * abs_sobel / np.max(abs_sobel))
-  binary_output = np.zeros_like(scaled_sobel)
-  binary_output[(scaled_sobel >= thresh[0]) & (scaled_sobel <= thresh[1])] = 1
-  return binary_output
+    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    if orient == 'x':
+        sobel = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=sobel_kernel)
+    if orient == 'y':
+        sobel = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=sobel_kernel)
+    abs_sobel = np.absolute(sobel)
+    scaled_sobel = np.uint8(255 * abs_sobel / np.max(abs_sobel))
+    binary_output = np.zeros_like(scaled_sobel)
+    binary_output[(scaled_sobel >= thresh[0]) & (scaled_sobel <= thresh[1])] = 1
+    return binary_output
 
 
 def hls_select(img, thresh=(0, 255)):
-  hls = cv2.cvtColor(img, cv2.COLOR_RGB2HLS)
-  s_channel = hls[:,:,2]
-  binary_output = np.zeros_like(s_channel)
-  binary_output[(s_channel >= thresh[0]) & (s_channel <= thresh[1])] = 1
-  return binary_output
+    hls = cv2.cvtColor(img, cv2.COLOR_RGB2HLS)
+    s_channel = hls[:,:,2]
+    binary_output = np.zeros_like(s_channel)
+    binary_output[(s_channel >= thresh[0]) & (s_channel <= thresh[1])] = 1
+    return binary_output
 
 
 def draw_roi(img, left_line_endpoints, right_line_endpoints, color=[255, 0, 0], thickness=1):
-  """
-  Draws the region-of-interest box on an image.
-  :param img: Source image on which the ROI has to be drawn.
-  :param left_line_endpoints: Endpoints of the line-segment belonging to the left line of the box.
-  :param right_line_endpoints: Endpoints os the line-segment belonging to the right line of the box.
-  :param color: RGB color of the line to be drawn.
-  :param thickness: Thickness of the line to be drawn.
-  """
-  # Draw left, top, right and bottom lines of the rectangular ROI.
-  cv2.line(img, left_line_endpoints[0], left_line_endpoints[-1], color, thickness)
-  cv2.line(img, left_line_endpoints[-1], right_line_endpoints[-1], color, thickness)
-  cv2.line(img, right_line_endpoints[0], right_line_endpoints[-1], color, thickness)
-  cv2.line(img, left_line_endpoints[0], right_line_endpoints[0], color, thickness)
-  return img
+    """
+    Draws the region-of-interest box on an image.
+    :param img: Source image on which the ROI has to be drawn.
+    :param left_line_endpoints: Endpoints of the line-segment belonging to the left line of the box.
+    :param right_line_endpoints: Endpoints os the line-segment belonging to the right line of the box.
+    :param color: RGB color of the line to be drawn.
+    :param thickness: Thickness of the line to be drawn.
+    """
+    # Draw left, top, right and bottom lines of the rectangular ROI.
+    cv2.line(img, left_line_endpoints[0], left_line_endpoints[-1], color, thickness)
+    cv2.line(img, left_line_endpoints[-1], right_line_endpoints[-1], color, thickness)
+    cv2.line(img, right_line_endpoints[0], right_line_endpoints[-1], color, thickness)
+    cv2.line(img, left_line_endpoints[0], right_line_endpoints[0], color, thickness)
+    return img
 
 
-def find_perspective_transform(src_img):
+def find_perspective_transform(src_img, save_transform=False):
     # Constants.
     roi_bottom_left = (200, 720)
     roi_top_left = (560, 475)
@@ -108,9 +108,20 @@ def find_perspective_transform(src_img):
     dst_rect_corners = np.array(dst_rect_corners, np.float32)
     dst_rect_corners = dst_rect_corners.reshape(-1, dst_rect_corners.shape[-1])
     ptrans_mat = cv2.getPerspectiveTransform(outer_rect_corners, dst_rect_corners)
-    # warped = cv2.warpPerspective(drawn_lines_img, ptrans_mat, img_size)
+    ptrans_mat_inv = cv2.getPerspectiveTransform(dst_rect_corners, outer_rect_corners)
+    warped = cv2.warpPerspective(drawn_lines_img, ptrans_mat, img_size)
     # plot_transformed_image(drawn_lines_img, warped, 'Image with source points', 'Warped image', save_result=True)
-    return ptrans_mat
+
+    if save_transform == True:
+        pickle.dump(
+            {'M':ptrans_mat, 'Minv':ptrans_mat_inv}, open('./perspective_transform.p', 'wb'))
+    return ptrans_mat, warped
+
+
+def load_perspective_transform_matrix(mat_path='./perspective_transform.p'):
+    transMat = pickle.load(open(mat_path, 'rb'))
+    M, Minv = map(transMat.get, ('M', 'Minv'))
+    return M, Minv
 
 
 def plot_transformed_image(
@@ -153,7 +164,7 @@ def plot_histogram(binary_img):
     return histogram
 
 
-def lane_detection_pipeline(binary_warped, visualize_lane=False):
+def detect_lane_lines(binary_warped, visualize_lane=True):
     histogram = np.sum(binary_warped[binary_warped.shape[0]//2:,:], axis=0)
     midpoint = np.int(histogram.shape[0]//2)
     leftx_base = np.argmax(histogram[:midpoint])
@@ -213,45 +224,89 @@ def lane_detection_pipeline(binary_warped, visualize_lane=False):
     righty = nonzeroy[right_lane_inds]
 
     # Fitting a second order polynomial over the left and right lines' pixels.
+    ym_per_pix = 30 / 720  # 30 metres per pixel in y-dimension.
+    xm_per_pix = 3.7 / 700  # 3.7 metres per pixel in x-dimension.
+    # Polynomials in pixel-space.
     left_fit = np.polyfit(lefty, leftx, 2)
     right_fit = np.polyfit(righty, rightx, 2)
+    # Polynomials in metres-space.
+    left_fit_m = np.array([(xm_per_pix/(ym_per_pix**2)) * left_fit[0],
+                           (xm_per_pix/ym_per_pix) * left_fit[1],
+                           left_fit[2]])
+    right_fit_m = np.array([(xm_per_pix/(ym_per_pix**2)) * right_fit[0],
+                            (xm_per_pix/ym_per_pix) * right_fit[1],
+                            right_fit[2]])
 
-    # Fitting for f(y) rather than f(x) since y varies (variable) and x could remain constant for different y values.
-    ploty = np.linspace(0, binary_warped.shape[0] - 1, binary_warped.shape[0])
-    left_fitx = left_fit[0] * ploty ** 2 + left_fit[1] * ploty + left_fit[2]
-    right_fitx = right_fit[0] * ploty ** 2 + right_fit[1] * ploty + right_fit[2]
-
-    out_img[nonzeroy[left_lane_inds], nonzerox[left_lane_inds]] = [255, 0, 0]
-    out_img[nonzeroy[right_lane_inds], nonzerox[right_lane_inds]] = [0, 0, 255]
     if visualize_lane:
+        # Fitting for f(y) rather than f(x) since y varies (variable) and x could remain constant for different y values.
+        ploty = np.linspace(0, binary_warped.shape[0] - 1, binary_warped.shape[0])
+        left_fitx = left_fit[0] * ploty ** 2 + left_fit[1] * ploty + left_fit[2]
+        right_fitx = right_fit[0] * ploty ** 2 + right_fit[1] * ploty + right_fit[2]
+
+        out_img[nonzeroy[left_lane_inds], nonzerox[left_lane_inds]] = [255, 0, 0]
+        out_img[nonzeroy[right_lane_inds], nonzerox[right_lane_inds]] = [0, 0, 255]
+
         plt.imshow(out_img)
         plt.plot(left_fitx, ploty, color='yellow')
         plt.plot(right_fitx, ploty, color='yellow')
         plt.xlim(0, 1280)
         plt.ylim(720, 0)
         plt.show()
-    return out_img, left_fit, right_fit
+
+    return out_img, left_fit, right_fit, left_fit_m, right_fit_m
 
 
-def calculate_curvature(src_img, left_fit, right_fit):
+def draw_lane(src_img, left_fit, right_fit, ptrans_mat_inv):
+    '''
+    Draws a detected lane on the source image.
+    :param src_img: Image where the lane was detected.
+    :param left_fit: Second degree polynomial capturing the left-line of the lane.
+    :param right_fit: Second degree polynomial capturing the left-line of the lane.
+    :return: Plotted lane image.
+    '''
+    ploty = np.linspace(0, src_img.shape[0]-1, src_img.shape[0])
+    color_warp = np.zeros_like(src_img).astype(np.uint8)
+    left_fitx = left_fit[0] * ploty ** 2 + left_fit[1] * ploty + left_fit[2]
+    right_fitx = right_fit[0] * ploty ** 2 + right_fit[1] * ploty + right_fit[2]
+    pts_left = np.array([np.transpose(np.vstack([left_fitx, ploty]))])
+    pts_right = np.array([np.flipud(np.transpose(np.vstack([right_fitx, ploty])))])
+    pts = np.hstack((pts_left, pts_right))
+    # Draw lane onto the warped blank image.
+    cv2.fillPoly(color_warp, np.int_([pts]), (0, 255, 0))
+    # Warp blank image back to source image using inverse perspective transform.
+    new_warp = warp(color_warp, ptrans_mat_inv)
+    combined = cv2.addWeighted(src_img, 1, new_warp, 0.3, 0)
+    plot_transformed_image(src_img, combined, 'Original Image', 'Detected Lane Image', axis_off=True)
+
+
+def calculate_curvature(src_img, poly_fit_m):
     '''
     Calculates curvature of a lane-line with the following equation.
     Curvature = (1 + (2Ay + B)^2)^(1.5) / |2A|, for a polynomial curve f(y) = Ay^2 + By + C.
-    :param src_img: Source image containing lane-lines drawn.
-    :param left_fit: Polynomial equation of degree two representing left lane-line.
-    :param right_fit: Polynomial equation of degree two representing right lane-line.
-    :return: Curvature of left and right lane-lines.
     '''
-    ym_per_pix = 30 / src_img.shape[0]  # 30 metres lane-length w.r.t the camera top-down image.
-    xm_per_pix = 3.7 / src_img.shape[1] # 3.7 metres lane-width w.r.t the camera top-down image.
-    y_eval = src_img.shape[0] - 1
-    # Converting coefficients of curvature-equations to metres.
-    left_fit = np.array([(xm_per_pix/(ym_per_pix**2)) * left_fit[0], (xm_per_pix/ym_per_pix) * left_fit[1]])
-    right_fit = np.array([(xm_per_pix/(ym_per_pix**2)) * right_fit[0], (xm_per_pix/ym_per_pix) * right_fit[1]])
-    left_curverad = ((1 + (2*left_fit[0]*y_eval + left_fit[1])**2)**1.5) / np.absolute(2*left_fit[0])
-    right_curverad = ((1 + (2*right_fit[0]*y_eval + right_fit[1])**2)**1.5) / np.absolute(2*right_fit[0])
-    print(left_curverad, right_curverad)
-    return left_curverad, right_curverad
+    ym_per_pix = 30 / 720  # 30 metres per pixel in y-dimension.
+    y_eval = (src_img.shape[0] - 1) * ym_per_pix
+    # Calculating curvature.
+    return ((1 + (2*poly_fit_m[0]*y_eval + poly_fit_m[1])**2)**1.5) / np.absolute(2*poly_fit_m[0])
+
+
+def calculate_vehicle_center(src_img, left_fit_m, right_fit_m):
+    pass
+    # ym_per_pix = 30 / 720  # 30 metres per pixel in y-dimension.
+    # xm_per_pix = 3.7 / 700  # 3.7 metres per pixel in x-dimension.
+    # xMax = src_img.shape[1] * xm_per_pix
+    # yMax = src_img.shape[0] * ym_per_pix
+    # vehicleCenter = xMax / 2
+    # lineLeft = left_fit_m[0]*yMax**2 + left_fit_m[1]*yMax + left_fit_m[2]
+    # lineRight = right_fit_m[0]*yMax**2 + right_fit_m[1]*yMax + right_fit_m[2]
+    # lineMiddle = lineLeft + (lineRight - lineLeft)/2
+    # diffFromVehicle = lineMiddle - vehicleCenter
+    # message=""
+    # if diffFromVehicle > 0:
+    #     message = '{:.2f} m right'.format(diffFromVehicle)
+    # else:
+    #     message = '{:.2f} m left'.format(-diffFromVehicle)
+    # print(message)
 
 
 def load_image(img_path):

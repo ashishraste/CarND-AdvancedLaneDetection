@@ -1,6 +1,7 @@
 import vision_util as vu
 import numpy as np
-import matplotlib.pyplot as plt
+import line as line
+
 
 def filter_pipeline(src_img):
     '''
@@ -24,7 +25,6 @@ def calibration_pipeline():
     '''
     mtx, dist = vu.compute_calibration_matrix()
     vu.save_calibration_matrix(mtx, dist)
-    # distort_test = vu.load_image('../camera_cal/calibration1.jpg')
 
 
 def perspective_transform_pipeline(mtx, dist, img_path='../test_images/straight_lines1.jpg'):
@@ -38,7 +38,7 @@ def perspective_transform_pipeline(mtx, dist, img_path='../test_images/straight_
     # Finding perspective transformation matrix to get bird's eye view on images.
     src_image = vu.load_image(img_path)
     undistorted = vu.undistort_image(src_image, mtx, dist)
-    return vu.find_perspective_transform(undistorted)
+    return vu.find_perspective_transform(undistorted, save_transform=True)
 
 
 def warp_pipeline(src_img, ptrans_mat):
@@ -49,14 +49,29 @@ def warp_pipeline(src_img, ptrans_mat):
     return binary_warped
 
 
+def lane_detection_pipeline():
+    '''
+    1. Receive image frame. Apply perspective-transform-pipeline for the first image.
+    2. Apply warp-pipeline to get binary-warped image.
+    3. Initialize left and right lines. Detect lane-lines.
+    4. Update left and right lane-lines:
+    '''
+    left_line = line.Line()
+    right_line = line.Line()
+    pass
+
+
 if __name__ == '__main__':
     mtx, dist = vu.load_calibration_matrix()
-    ptrans_mat = perspective_transform_pipeline(mtx, dist)
+    ptrans_mat, ptrans_mat_inv = vu.load_perspective_transform_matrix()
 
-    # Warp pipeline. Returns binarized warped image.
-    src_img = vu.load_image('../test_images/test3.jpg')
+
+    # Warp pipeline. Returns warped binary image.
+    src_img = vu.load_image('../test_images/test2.jpg')
     binary_warped = warp_pipeline(src_img, ptrans_mat)
 
-    lane_lines_img, left_fit, right_fit = vu.lane_detection_pipeline(
-        binary_warped, visualize_lane=True)
-    vu.calculate_curvature(lane_lines_img, left_fit, right_fit)
+    lane_lines_img,left_fit,right_fit,left_fit_m,right_fit_m = vu.detect_lane_lines(
+        binary_warped)
+    vu.calculate_curvature(lane_lines_img, left_fit_m)
+    vu.calculate_curvature(lane_lines_img, right_fit_m)
+    vu.draw_lane(src_img, left_fit, right_fit, ptrans_mat_inv)
