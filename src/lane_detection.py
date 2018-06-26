@@ -3,22 +3,6 @@ import numpy as np
 import line as line
 
 
-def filter_pipeline(src_img):
-    '''
-    Returns gradient and color filtered image.
-    '''
-    sobelx_thresh = (20, 230)
-    hls_saturation_thresh = (180, 255)
-    # Get Sobel(x)-filtered binary image.
-    sobelx_binary = vu.abs_sobel_thresh(src_img, orient='x', thresh=sobelx_thresh)
-    # Get Saturation-channel-thresholded binary image.
-    hls_binary = vu.hls_select(src_img, thresh=hls_saturation_thresh)
-    # Combined binary image having color and gradient thresholds applied.
-    combined_binary = np.zeros_like(sobelx_binary)
-    combined_binary[(sobelx_binary == 1) | (hls_binary == 1)] = 1
-    return combined_binary
-
-
 def calibration_pipeline():
     '''
     # Calibrates camera to undistort images.
@@ -42,8 +26,8 @@ def perspective_transform_pipeline(mtx, dist, img_path='../test_images/straight_
 
 
 def warp_pipeline(src_img, ptrans_mat):
-    warped = vu.warp(src_img, ptrans_mat)
-    binary_warped = filter_pipeline(warped)
+    binary = vu.combined_threshold(src_img)
+    binary_warped = vu.warp(binary, ptrans_mat)
     # vu.plot_transformed_image(
     #     src_img, binary_warped, 'Warped Image', 'Warped Binary Image', gray_cmap=True)
     return binary_warped
@@ -52,7 +36,7 @@ def warp_pipeline(src_img, ptrans_mat):
 def lane_detection_pipeline():
     '''
     1. Receive image frame. Apply perspective-transform-pipeline for the first image.
-    2. Apply warp-pipeline to get binary-warped image.
+    2. Apply warp-pipeline to get binary-binary_warped image.
     3. Initialize left and right lines. Detect lane-lines.
     4. Update left and right lane-lines:
     '''
@@ -65,13 +49,11 @@ if __name__ == '__main__':
     mtx, dist = vu.load_calibration_matrix()
     ptrans_mat, ptrans_mat_inv = vu.load_perspective_transform_matrix()
 
-
-    # Warp pipeline. Returns warped binary image.
     src_img = vu.load_image('../test_images/test3.jpg')
     binary_warped = warp_pipeline(src_img, ptrans_mat)
 
     lane_lines_img,left_fit,right_fit = vu.detect_lane_lines(binary_warped)
-    vu.calculate_curvature(lane_lines_img, left_fit)
-    vu.calculate_curvature(lane_lines_img, right_fit)
-    vu.calculate_vehicle_offset(lane_lines_img, left_fit, right_fit)
+    # vu.calculate_curvature(lane_lines_img, left_fit)
+    # vu.calculate_curvature(lane_lines_img, right_fit)
+    # vu.calculate_vehicle_offset(lane_lines_img, left_fit, right_fit)
     vu.draw_lane(src_img, left_fit, right_fit, ptrans_mat_inv)

@@ -43,6 +43,9 @@ def load_calibration_matrix(calib_path = './calibration.p'):
 
 
 def abs_sobel_thresh(img, orient='x', sobel_kernel=3, thresh=(0,255)):
+    '''
+    Applies Sobel filter along either x-dimension or y-dimension.
+    '''
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
     if orient == 'x':
         sobel = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=sobel_kernel)
@@ -55,12 +58,70 @@ def abs_sobel_thresh(img, orient='x', sobel_kernel=3, thresh=(0,255)):
     return binary_output
 
 
-def hls_select(img, thresh=(0, 255)):
+def mag_thresh(img, sobel_kernel=3, thresh=(0, 255)):
+    '''
+    Applies Sobel filter alon x and y dimensions, then computes the magnitude of the gradient
+    and applies a threshold on the magnitude.
+    '''
+    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=sobel_kernel)
+    sobely = cv2.Sobel(gray, cv2.CV_64F, 0 ,1, ksize=sobel_kernel)
+    # Gradient magnitude.
+    grad_mag = np.sqrt(sobelx**2 + sobely**2)
+    scaled_grad_mag = np.uint8(255 * grad_mag / np.max(grad_mag))
+    sbinary = np.zeros_like(scaled_grad_mag)
+    sbinary[(scaled_grad_mag >= thresh[0]) & (scaled_grad_mag <= thresh[1])] = 1
+    return sbinary
+
+
+def dir_threshold(img, sobel_kernel=3, thresh=(0, np.pi/2)):
+    '''
+    Applies threshold along specified direction of detected pixels.
+    '''
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=sobel_kernel)
+    sobely = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=sobel_kernel)
+    dir_mag = np.arctan2(np.absolute(sobely), np.absolute(sobelx))
+    sbinary = np.zeros_like(dir_mag)
+    sbinary[(dir_mag >= thresh[0]) & (dir_mag <= thresh[1])] = 1
+    return sbinary
+
+
+def hls_thresh(img, thresh=(0, 255)):
+    '''
+    Applies color-thresholding in HLS space, particularly in the S-channel.
+    '''
     hls = cv2.cvtColor(img, cv2.COLOR_RGB2HLS)
     s_channel = hls[:,:,2]
     binary_output = np.zeros_like(s_channel)
     binary_output[(s_channel >= thresh[0]) & (s_channel <= thresh[1])] = 1
     return binary_output
+
+
+def combined_threshold(src_img):
+    '''
+    Applies gradient and color thresholding (HLS space) and returns a binary image.
+    '''
+    sobelx_binary = abs_sobel_thresh(src_img, orient='x', thresh=(50,255))
+    mag_binary = mag_thresh(src_img, sobel_kernel=3, thresh=(50,255))
+    dir_binary = dir_threshold(src_img, sobel_kernel=15, thresh=(0.7,1.3))
+    hls_binary = hls_thresh(src_img, thresh=(180,255))
+    # Combined binary image having color and gradient thresholds applied.
+    combined_binary = np.zeros_like(sobelx_binary)
+    combined_binary[
+        (sobelx_binary == 1) |
+        ((mag_binary == 1) & (dir_binary == 1)) |
+        (hls_binary == 1)] = 1
+    return combined_binary
+
+
+def filter_test_images(image_dir):
+    combined_filter = lambda filepath : combined_threshold(load_image(filepath))
+    image_dir = glob.glob(image_dir)
+    output_dir = '../output_images'
+    for idx, fname in enumerate(image_dir):
+        binary = combined_filter(fname)
+        save_image(binary, output_dir+'/binary/binary_'+fname.split('/')[2], cmap_gray=True)
 
 
 def draw_roi(img, left_line_endpoints, right_line_endpoints, color=[255, 0, 0], thickness=1):
@@ -110,7 +171,6 @@ def find_perspective_transform(src_img, save_transform=False):
     ptrans_mat = cv2.getPerspectiveTransform(outer_rect_corners, dst_rect_corners)
     ptrans_mat_inv = cv2.getPerspectiveTransform(dst_rect_corners, outer_rect_corners)
     warped = cv2.warpPerspective(drawn_lines_img, ptrans_mat, img_size)
-    # plot_transformed_image(drawn_lines_img, warped, 'Image with source points', 'Warped image', save_result=True)
 
     if save_transform == True:
         pickle.dump(
@@ -152,9 +212,27 @@ def undistort_image(src_img, mat, dist):
     return cv2.undistort(src_img, mat, dist, None, mat)
 
 
+def undistort_test_images(image_dir, mtx, dist):
+    undistort = lambda filepath : undistort_image(load_image(filepath), mtx, dist)
+    image_dir = glob.glob(image_dir)
+    output_dir = '../output_images'
+    for idx, fname in enumerate(image_dir):
+        undistorted = undistort(fname)
+        save_image(undistorted, output_dir+'/undistorted/undistorted_'+fname.split('/')[2])
+
+
 def warp(src_img, ptrans_mat):
     img_size = (src_img.shape[1], src_img.shape[0])
     return cv2.warpPerspective(src_img, ptrans_mat, img_size)
+
+
+def warp_test_images(image_dir, ptrans_mat):
+    warp_image = lambda filepath : warp(combined_threshold(load_image(filepath)), ptrans_mat)
+    image_dir = glob.glob(image_dir)
+    output_dir = '../output_images'
+    for idx, fname in enumerate(image_dir):
+        warped = warp_image(fname)
+        save_image(warped, output_dir+'/binary_warped/warped_'+fname.split('/')[2], cmap_gray=True)
 
 
 def plot_histogram(binary_img):
@@ -233,10 +311,8 @@ def detect_lane_lines(binary_warped, visualize_lane=True):
         ploty = np.linspace(0, binary_warped.shape[0] - 1, binary_warped.shape[0])
         left_fitx = left_fit[0] * ploty ** 2 + left_fit[1] * ploty + left_fit[2]
         right_fitx = right_fit[0] * ploty ** 2 + right_fit[1] * ploty + right_fit[2]
-
         out_img[nonzeroy[left_lane_inds], nonzerox[left_lane_inds]] = [255, 0, 0]
         out_img[nonzeroy[right_lane_inds], nonzerox[right_lane_inds]] = [0, 0, 255]
-
         plt.imshow(out_img)
         plt.plot(left_fitx, ploty, color='yellow')
         plt.plot(right_fitx, ploty, color='yellow')
@@ -245,6 +321,43 @@ def detect_lane_lines(binary_warped, visualize_lane=True):
         plt.show()
 
     return out_img, left_fit, right_fit
+
+
+def update_detected_lane(binary_warped, left_fit, right_fit):
+    '''
+    Update detected lane lines given a new image frame.
+    :param binary_warped: Warped binary image of the new frame.
+    :param left_fit: Previously found polynomial fit on left lane-line.
+    :param right_fit: Previously found polynomial fit on right lane-line.
+    :return: Updated polynomial fits on left and right lane-lines.
+    '''
+    # Identify the x and y positions of all nonzero pixels in the image
+    nonzero = binary_warped.nonzero()
+    nonzeroy = np.array(nonzero[0])
+    nonzerox = np.array(nonzero[1])
+    margin = 100
+
+    # Find lane-pixel-indices lying around the (margin) area of previously detected lane-lines.
+    left_lane_x = left_fit[0]*(nonzeroy**2) + left_fit[1]*nonzeroy + left_fit[2]
+    right_lane_x = right_fit[0]*(nonzeroy**2) + right_fit[1]*nonzeroy + right_fit[2]
+    left_lane_inds = (nonzerox >=  left_lane_x - margin) & (nonzerox <= left_lane_x + margin)
+    right_lane_inds = (nonzerox >= right_lane_x - margin) & (nonzerox <= right_lane_x + margin)
+
+    # Extract left and right pixel positions once again.
+    leftx = nonzerox[left_lane_inds]
+    lefty = nonzeroy[left_lane_inds]
+    rightx = nonzerox[right_lane_inds]
+    righty = nonzeroy[right_lane_inds]
+
+    # Filter for enough number of detected left and right lane-line pixel-indices.
+    min_indices = 10
+    if lefty.shape[0] < min_indices or righty.shape[0] < min_indices:
+        return None
+
+    # Fit a second order polynomial to extracted pixels.
+    left_fit = np.polyfit(lefty, leftx, 2)
+    right_fit = np.polyfit(righty, rightx, 2)
+    return left_fit, right_fit
 
 
 def draw_lane(src_img, left_fit, right_fit, ptrans_mat_inv):
@@ -262,7 +375,7 @@ def draw_lane(src_img, left_fit, right_fit, ptrans_mat_inv):
     pts_left = np.array([np.transpose(np.vstack([left_fitx, ploty]))])
     pts_right = np.array([np.flipud(np.transpose(np.vstack([right_fitx, ploty])))])
     pts = np.hstack((pts_left, pts_right))
-    # Draw lane onto the warped blank image.
+    # Draw lane onto the binary_warped blank image.
     cv2.fillPoly(color_warp, np.int_([pts]), (0, 255, 0))
     # Warp blank image back to source image using inverse perspective transform.
     new_warp = warp(color_warp, ptrans_mat_inv)
@@ -305,5 +418,7 @@ def load_image(img_path):
     return cv2.cvtColor(cv2.imread(img_path), cv2.COLOR_BGR2RGB)
 
 
-def save_image(img, img_path):
+def save_image(img, img_path, cmap_gray=False):
+    if cmap_gray == True:
+        plt.set_cmap('gray')
     plt.imsave(img_path, img)
