@@ -4,5 +4,5 @@
 # Cache files.
 src/__pycache__
 
-# Test video.
-project_video.mp4
+# Miscellaneous.
+.DS_Store

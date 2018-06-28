@@ -43,9 +43,9 @@ def load_calibration_matrix(calib_path = './calibration.p'):
 
 
 def abs_sobel_thresh(img, orient='x', sobel_kernel=3, thresh=(0,255)):
-    '''
+    """
     Applies Sobel filter along either x-dimension or y-dimension.
-    '''
+    """
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
     if orient == 'x':
         sobel = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=sobel_kernel)
@@ -59,10 +59,10 @@ def abs_sobel_thresh(img, orient='x', sobel_kernel=3, thresh=(0,255)):
 
 
 def mag_thresh(img, sobel_kernel=3, thresh=(0, 255)):
-    '''
+    """
     Applies Sobel filter alon x and y dimensions, then computes the magnitude of the gradient
     and applies a threshold on the magnitude.
-    '''
+    """
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
     sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=sobel_kernel)
     sobely = cv2.Sobel(gray, cv2.CV_64F, 0 ,1, ksize=sobel_kernel)
@@ -75,9 +75,9 @@ def mag_thresh(img, sobel_kernel=3, thresh=(0, 255)):
 
 
 def dir_threshold(img, sobel_kernel=3, thresh=(0, np.pi/2)):
-    '''
+    """
     Applies threshold along specified direction of detected pixels.
-    '''
+    """
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=sobel_kernel)
     sobely = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=sobel_kernel)
@@ -88,9 +88,9 @@ def dir_threshold(img, sobel_kernel=3, thresh=(0, np.pi/2)):
 
 
 def hls_thresh(img, thresh=(0, 255)):
-    '''
-    Applies color-thresholding in HLS space, particularly in the S-channel.
-    '''
+    """
+    Applies color-threshold in HLS space, particularly in the S-channel.
+    """
     hls = cv2.cvtColor(img, cv2.COLOR_RGB2HLS)
     s_channel = hls[:,:,2]
     binary_output = np.zeros_like(s_channel)
@@ -99,9 +99,9 @@ def hls_thresh(img, thresh=(0, 255)):
 
 
 def combined_threshold(src_img):
-    '''
-    Applies gradient and color thresholding (HLS space) and returns a binary image.
-    '''
+    """
+    Applies gradient and color thresholds (HLS space) and returns a binary image.
+    """
     sobelx_binary = abs_sobel_thresh(src_img, orient='x', thresh=(50,255))
     mag_binary = mag_thresh(src_img, sobel_kernel=3, thresh=(50,255))
     dir_binary = dir_threshold(src_img, sobel_kernel=15, thresh=(0.7,1.3))
@@ -142,7 +142,7 @@ def draw_roi(img, left_line_endpoints, right_line_endpoints, color=[255, 0, 0], 
 
 
 def find_perspective_transform(src_img, save_transform=False):
-    # Constants.
+    # Region of interest where we look for lane line detections.
     roi_bottom_left = (200, 720)
     roi_top_left = (560, 475)
     roi_top_right = (730, 475)
@@ -175,7 +175,21 @@ def find_perspective_transform(src_img, save_transform=False):
     if save_transform == True:
         pickle.dump(
             {'M':ptrans_mat, 'Minv':ptrans_mat_inv}, open('./perspective_transform.p', 'wb'))
-    return ptrans_mat, warped
+    return ptrans_mat, ptrans_mat_inv, warped
+
+
+def compute_perspective_transform(mtx, dist, img_path='../test_images/straight_lines1.jpg'):
+    """
+    Computes the perspective-transform matrix for a distorted image.
+    :param mtx: Calibration matrix.
+    :param dist: Distortion coefficients.
+    :param img_path: Image path.
+    :return: Perspective transform matrix.
+    """
+    # Finding perspective transformation matrix to get bird's eye view on images.
+    src_image = load_image(img_path)
+    undistorted = undistort_image(src_image, mtx, dist)
+    return find_perspective_transform(undistorted, save_transform=True)
 
 
 def load_perspective_transform_matrix(mat_path='./perspective_transform.p'):
@@ -187,9 +201,9 @@ def load_perspective_transform_matrix(mat_path='./perspective_transform.p'):
 def plot_transformed_image(
     src, dst, source_image_title, transformed_img_title, gray_cmap=False,
     axis_off=False, save_result=False):
-    '''
+    """
     Plots source image and its transformed version.
-    '''
+    """
     f, (ax1, ax2) = plt.subplots(1, 2, figsize=(24, 9))
     f.tight_layout()
     ax1.set_title(source_image_title, fontsize=50)
@@ -242,7 +256,7 @@ def plot_histogram(binary_img):
     return histogram
 
 
-def detect_lane_lines(binary_warped, visualize_lane=True):
+def detect_lane_lines(binary_warped, visualize_lane=False):
     histogram = np.sum(binary_warped[binary_warped.shape[0]//2:,:], axis=0)
     midpoint = np.int(histogram.shape[0]//2)
     leftx_base = np.argmax(histogram[:midpoint])
@@ -325,7 +339,7 @@ def detect_lane_lines(binary_warped, visualize_lane=True):
 
 def update_detected_lane(binary_warped, left_fit, right_fit):
     '''
-    Update detected lane lines given a new image frame.
+    Updates detected lane lines given a new image frame.
     :param binary_warped: Warped binary image of the new frame.
     :param left_fit: Previously found polynomial fit on left lane-line.
     :param right_fit: Previously found polynomial fit on right lane-line.
@@ -355,19 +369,25 @@ def update_detected_lane(binary_warped, left_fit, right_fit):
         return None
 
     # Fit a second order polynomial to extracted pixels.
-    left_fit = np.polyfit(lefty, leftx, 2)
-    right_fit = np.polyfit(righty, rightx, 2)
-    return left_fit, right_fit
+    updated_left_fit = np.polyfit(lefty, leftx, 2)
+    updated_right_fit = np.polyfit(righty, rightx, 2)
+    return {'left_fit':updated_left_fit, 'right_fit':updated_right_fit}
 
 
-def draw_lane(src_img, left_fit, right_fit, ptrans_mat_inv):
-    '''
+def draw_lane(src_img, left_fit, right_fit, ptrans_mat_inv, curv_left, curv_right, vehicle_offset):
+    """
     Draws a detected lane on the source image.
     :param src_img: Image where the lane was detected.
     :param left_fit: Second degree polynomial capturing the left-line of the lane.
     :param right_fit: Second degree polynomial capturing the left-line of the lane.
-    :return: Plotted lane image.
-    '''
+    :param ptrans_mat_inv: Perspective transform matrix to warp a bird's eye view
+    lane-image back to its forward-facing format.
+    :param curv_left: Radius of curvature of the left lane-line.
+    :param curv_right: Radius of curvature of the right lane-line.
+    :param vehicle_offset: Offset of vehicle's center from lane-center.
+    :param display_lane: Flag to switch on/off the display of detected lane.
+    :return: Detected lane image along with curvature and vehicle-offset details written on it.
+    """
     ploty = np.linspace(0, src_img.shape[0]-1, src_img.shape[0])
     color_warp = np.zeros_like(src_img).astype(np.uint8)
     left_fitx = left_fit[0] * (ploty ** 2) + left_fit[1] * ploty + left_fit[2]
@@ -375,43 +395,60 @@ def draw_lane(src_img, left_fit, right_fit, ptrans_mat_inv):
     pts_left = np.array([np.transpose(np.vstack([left_fitx, ploty]))])
     pts_right = np.array([np.flipud(np.transpose(np.vstack([right_fitx, ploty])))])
     pts = np.hstack((pts_left, pts_right))
-    # Draw lane onto the binary_warped blank image.
+
+    # Draw lane onto the warped blank image.
     cv2.fillPoly(color_warp, np.int_([pts]), (0, 255, 0))
+
     # Warp blank image back to source image using inverse perspective transform.
     new_warp = warp(color_warp, ptrans_mat_inv)
     combined = cv2.addWeighted(src_img, 1, new_warp, 0.3, 0)
-    plot_transformed_image(src_img, combined, 'Original Image', 'Detected Lane Image', axis_off=True)
+
+    # Write lane-curvature and vehicle-offset details onto the source image.
+    lane_curvature = (curv_left + curv_right) / 2.
+    message = 'Radius of curvature {0:.2f}m'.format(lane_curvature)
+    cv2.putText(combined, message, (30,50), 0, 1, (0,0,0), 2, cv2.LINE_AA)
+    if vehicle_offset > 0:
+        message = 'Vehicle is {0:.2f}m right of lane-center'.format(vehicle_offset)
+    else:
+        message = 'Vehicle is {0:.2f}m left of lane-center'.format(np.abs(vehicle_offset))
+    cv2.putText(combined, message, (30,85), 0, 1, (0, 0, 0), 2, cv2.LINE_AA)
+
+    return combined
 
 
-def calculate_curvature(src_img, poly_fit):
-    '''
-    Calculates curvature of a lane-line with the following equation.
+def calculate_curvature(src_img, left_fit, right_fit):
+    """
+    Calculates curvature of a lane with the following equation.
     Curvature = (1 + (2Ay + B)^2)^(1.5) / |2A|, for a polynomial curve f(y) = Ay^2 + By + C.
-    '''
-    xm_per_pix = 3.6 / 700 # 3.6 metres per pixel in x-dimension.
-    ym_per_pix = 30 / 720  # 30 metres per pixel in y-dimension.
-    y_eval = (src_img.shape[0] - 1) * ym_per_pix
-    # Polynomial in world-space.
-    poly_fit_m = np.array([(xm_per_pix / (ym_per_pix ** 2)) * poly_fit[0],
-                           (xm_per_pix / ym_per_pix) * poly_fit[1],
-                           poly_fit[2]])
+    """
+    xm_per_pix = 3.6 / 700  # 3.6 metres per pixel in x-dimension.
+    ym_per_pix = 30 / 720   # 30 metres per pixel in y-dimension.
+    y_eval = src_img.shape[0] - 1  # y-value at bottom most part of the image.
+    # Polynomials in world-space.
+    left_fit_m = np.array([(xm_per_pix / (ym_per_pix ** 2)) * left_fit[0],
+                           (xm_per_pix / ym_per_pix) * left_fit[1],
+                           left_fit[2]])
+    right_fit_m = np.array([(xm_per_pix / (ym_per_pix ** 2)) * right_fit[0],
+                           (xm_per_pix / ym_per_pix) * right_fit[1],
+                           right_fit[2]])
     # Calculating curvature.
-    return ((1 + (2*poly_fit_m[0]*y_eval + poly_fit_m[1])**2)**1.5) / np.absolute(2*poly_fit_m[0])
+    c_left = ((1 + (2*left_fit_m[0]*y_eval + left_fit_m[1])**2)**1.5) / np.absolute(2*left_fit_m[0])
+    c_right = ((1 + (2*right_fit_m[0]*y_eval + right_fit_m[1])**2)**1.5) / np.absolute(2*right_fit_m[0])
+    return c_left, c_right
 
 
-def calculate_vehicle_offset(src_img, left_fit_m, right_fit_m):
+def calculate_vehicle_offset(src_img, left_fit, right_fit):
+    """
+    Calculates vehicle's offset from the lane's center.
+    """
     xm_per_pix = 3.7 / 700  # 3.7 metres per pixel in x-dimension.
-    bottom_y = src_img.shape[0]
-    bottom_x_left = left_fit_m[0]*(bottom_y**2) + left_fit_m[1]*bottom_y + left_fit_m[2]
-    bottom_x_right = right_fit_m[0]*(bottom_y**2) + right_fit_m[1]*bottom_y + right_fit_m[2]
+    bottom_y = src_img.shape[0] - 1
+    bottom_x_left = left_fit[0] * (bottom_y ** 2) + left_fit[1] * bottom_y + left_fit[2]
+    bottom_x_right = right_fit[0] * (bottom_y ** 2) + right_fit[1] * bottom_y + right_fit[2]
 
     vehicle_offset = (src_img.shape[1]/2) - (bottom_x_left + bottom_x_right)/2
     vehicle_offset *= xm_per_pix
-    if vehicle_offset > 0:
-        message = 'Vehicle is {0:.3f}m right of lane-center'.format(vehicle_offset)
-    else:
-        message = 'Vehicle is {0:.3f}m left of lane-center'.format(np.abs(vehicle_offset))
-    return vehicle_offset, message
+    return vehicle_offset
 
 
 def load_image(img_path):
@@ -419,6 +456,6 @@ def load_image(img_path):
 
 
 def save_image(img, img_path, cmap_gray=False):
-    if cmap_gray == True:
+    if cmap_gray is True:
         plt.set_cmap('gray')
     plt.imsave(img_path, img)
