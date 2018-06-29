@@ -95,15 +95,15 @@ def detection_pipeline_test():
     """
     Sanity check for the lane-detection pipeline.
     """
-    # img = vu.load_image('../test_images/test3.jpg')
-    # detected_lane = lane_detection_pipeline(img, display_lane=True)
-    # vu.plot_transformed_image(img, detected_lane, 'Original Image', 'Detected Lane Image', axis_off=True)
-    # detected_lane = lane_detection_pipeline(img, display_lane=True)
-    # vu.plot_transformed_image(img, detected_lane, 'Original Image', 'Detected Lane Image', axis_off=True)
-    # Failure case.
-    img = vu.load_image('../test_images/shadow_failure.jpg')
+    img = vu.load_image('../test_images/test3.jpg')
     detected_lane = lane_detection_pipeline(img)
     vu.plot_transformed_image(img, detected_lane, 'Original Image', 'Detected Lane Image', axis_off=True)
+    # detected_lane = lane_detection_pipeline(img)
+    # vu.plot_transformed_image(img, detected_lane, 'Original Image', 'Detected Lane Image', axis_off=True)
+    # Failure case.
+    # img = vu.load_image('../test_images/shadow_failure.jpg')
+    # detected_lane = lane_detection_pipeline(img)
+    # vu.plot_transformed_image(img, detected_lane, 'Original Image', 'Detected Lane Image', axis_off=True)
 
 
 def run_video_pipeline(input_video_file, output_video_file):

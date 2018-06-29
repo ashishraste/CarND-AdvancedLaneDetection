@@ -80,11 +80,13 @@ coefficients are found.
 (`src/calibration.p`) for reuse.
 
 Above steps are performed in `src/lane_detection.py`, under
-`calibration_pipeline()` function.
+`calibration_pipeline()` function, where OpenCV's `findChessboardCorners` and
+`calibrateCamera()` utilities are used.
 
-| Sample (distorted) chessboard image | Undistorted version after calibration |
+| Sample (distorted) image | Undistorted version after calibration |
 |:-----------------------------------:|:-------------------------------------:|
 | ![left](camera_cal/calibration1.jpg "left")| ![right](output_images/undistorted/undistorted_chessboard.jpg "right")|
+| ![left](test_images/test3.jpg "left")| ![right](output_images/undistorted/undistorted_test3.jpg "right")|
 
 ### Image filtering
 
@@ -207,8 +209,10 @@ Further we annotate the original image with the curvature and vehicle-offset
 details. All these steps are carried out in `draw_lane()` function under
 `src/vision_util.py`.
 
-Finally, above pipeline steps, except for camera-calibration are put together
-in `lane_detection_pipeline()` function, `src/lane_detection.py`. This function
+![sample-annotation](output_images/sample_annotated_lane.png "annotated")
+
+Finally, the above pipeline steps, except for camera-calibration are put together
+in `lane_detection_pipeline()` function in `src/lane_detection.py`. This function
 is run against an input stream of video [project_video.mp4](project_video.mp4),
 and the output is saved in [detected_lane.mp4](detected_lane.mp4).
 
