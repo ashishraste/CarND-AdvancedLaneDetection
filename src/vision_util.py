@@ -37,7 +37,7 @@ def save_calibration_matrix(matrix, dist):
         pickle.dump(calib_details, calib_file)
 
 
-def load_calibration_matrix(calib_path = './calibration.p'):
+def load_calibration_matrix(calib_path='./calibration.p'):
     calib_details = pickle.load(open(calib_path, 'rb'))
     return calib_details['calibration_matrix'], calib_details['distortion_coefficients']
 
