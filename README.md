@@ -218,8 +218,13 @@ and the output is saved in [detected_lane.mp4](detected_lane.mp4).
 
 ## Further improvements
 
-Detection routine above is reliant on ROI to begin with. It'd make the pipeline
+1. There are various scenarios where this lane-detection pipeline would fail
+for example in cases where there's occlusion (from other vehicles), where there are
+continuous streak of shadows with lower visibility, etc. This drawback was observed
+in the challenge-videos of the project.
+
+2. Detection routine above is reliant on ROI to begin with. It'd make the pipeline
 more robust if we look for pixel features representing lane-lines rather than
 looking for lane-line pixels in an ROI. Making use of convolutional neural nets
-along with RANSAC, as outlined in [this work](https://link.springer.com/chapter/10.1007/978-3-319-12637-1_57)
-might improve the robustness of the detection-pipeline.
+as outlined in [works like this](https://link.springer.com/chapter/10.1007/978-3-319-12637-1_57)
+would improve the robustness of the detection-pipeline.
